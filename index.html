@@ -4,6 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>総武線・横須賀線 時刻表</title>
+  <style>
+    #results {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-top: 1rem;
+    }
+
+    .train-card {
+      border: 1px solid #999;
+      padding: 1rem;
+    }
+
+    .train-card dl {
+      display: grid;
+      gap: 0.35rem 1rem;
+      grid-template-columns: max-content 1fr;
+      margin: 0;
+    }
+
+    .train-card dt {
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
   <main>
@@ -26,17 +50,7 @@
 
     <p id="status">時刻表を読み込んでいます...</p>
     <p id="updated"></p>
-    <table>
-      <thead>
-        <tr>
-          <th>出発時刻</th>
-          <th>所要時間</th>
-          <th>始発</th>
-          <th>列車</th>
-        </tr>
-      </thead>
-      <tbody id="results"></tbody>
-    </table>
+    <section id="results" aria-live="polite"></section>
   </main>
 
   <script>
@@ -67,14 +81,6 @@
 
     function formatTime(value) {
       return `${value.slice(0, 2)}:${value.slice(2)}`;
-    }
-
-    function getStationTime(train, name, type) {
-      const column = stationColumns.find((item) =>
-        item.name === name && item.header.endsWith(`_${type}`)
-      );
-      if (!column) return null;
-      return timeToMinutes(train[column.index]);
     }
 
     function getCurrentMinutes() {
@@ -120,31 +126,36 @@
           return { train, departureMinutes, arrivalMinutes };
         })
         .filter((item) => item && item.departureMinutes >= currentMinutes)
-        .slice(0, 5);
+        .slice(0, 10);
 
       if (matchingTrains.length === 0) {
         status.textContent = '現在時刻以降の列車はありません。';
       } else {
-        status.textContent = `${departure}駅から${arrival}駅まで、現在時刻以降の列車（最大5本）`;
+        status.textContent = `${departure}駅から${arrival}駅まで、現在時刻以降の列車（最大10本）`;
       }
       updated.textContent = `検索時刻: ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
 
       matchingTrains.forEach(({ train, departureMinutes, arrivalMinutes }) => {
-        const row = document.createElement('tr');
+        const card = document.createElement('article');
+        card.className = 'train-card';
         const start = train[5] || '';
         const startStation = start.replace(/\s+\d{4}$/, '');
         const values = [
-          formatTime(String(train[departureColumn.index]).padStart(4, '0')),
-          `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`,
-          startStation ? `はい（${startStation}）` : 'いいえ',
-          `${train[0]} (${train[1]})`
+          ['列車', `${train[0]} (${train[1]})`],
+          ['出発時刻', formatTime(String(train[departureColumn.index]).padStart(4, '0'))],
+          ['所要時間', `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`],
+          ['始発', startStation === departure ? '始発' : '']
         ];
-        values.forEach((value) => {
-          const cell = document.createElement('td');
-          cell.textContent = value;
-          row.appendChild(cell);
+        const details = document.createElement('dl');
+        values.forEach(([label, value]) => {
+          const term = document.createElement('dt');
+          term.textContent = label;
+          const description = document.createElement('dd');
+          description.textContent = value;
+          details.append(term, description);
         });
-        results.appendChild(row);
+        card.appendChild(details);
+        results.appendChild(card);
       });
     }
 
