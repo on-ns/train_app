@@ -6,26 +6,14 @@
   <title>総武線・横須賀線 時刻表</title>
   <style>
     #results {
-      display: grid;
-      gap: 1rem;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      border-collapse: collapse;
       margin-top: 1rem;
     }
 
-    .train-card {
+    #results th,
+    #results td {
       border: 1px solid #999;
-      padding: 1rem;
-    }
-
-    .train-card dl {
-      display: grid;
-      gap: 0.35rem 1rem;
-      grid-template-columns: max-content 1fr;
-      margin: 0;
-    }
-
-    .train-card dt {
-      font-weight: bold;
+      padding: 0.5rem;
     }
   </style>
 </head>
@@ -50,7 +38,18 @@
 
     <p id="status">時刻表を読み込んでいます...</p>
     <p id="updated"></p>
-    <section id="results" aria-live="polite"></section>
+    <table id="results" aria-live="polite">
+      <thead>
+        <tr>
+          <th>出発時刻</th>
+          <th>出発まで</th>
+          <th>所要時間</th>
+          <th>始発</th>
+          <th>列車</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </main>
 
   <script>
@@ -108,7 +107,8 @@
         item.name === arrival && item.header.endsWith('_着')
       ) || stationColumns.find((item) => item.name === arrival);
 
-      results.replaceChildren();
+      const resultsBody = results.querySelector('tbody');
+      resultsBody.replaceChildren();
       if (!departureColumn || !arrivalColumn || departureColumn.index >= arrivalColumn.index) {
         status.textContent = 'この区間の列車情報はありません。駅を選び直してください。';
         updated.textContent = '';
@@ -131,31 +131,27 @@
       if (matchingTrains.length === 0) {
         status.textContent = '現在時刻以降の列車はありません。';
       } else {
-        status.textContent = `${departure}駅から${arrival}駅まで、現在時刻以降の列車（最大10本）`;
+        status.textContent = '';
       }
       updated.textContent = `検索時刻: ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
 
       matchingTrains.forEach(({ train, departureMinutes, arrivalMinutes }) => {
-        const card = document.createElement('article');
-        card.className = 'train-card';
+        const row = document.createElement('tr');
         const start = train[5] || '';
         const startStation = start.replace(/\s+\d{4}$/, '');
         const values = [
-          ['列車', `${train[0]} (${train[1]})`],
-          ['出発時刻', formatTime(String(train[departureColumn.index]).padStart(4, '0'))],
-          ['所要時間', `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`],
-          ['始発', startStation === departure ? '始発' : '']
+          formatTime(String(train[departureColumn.index]).padStart(4, '0')),
+          `${departureMinutes - currentMinutes}分`,
+          `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`,
+          startStation === departure ? '始発' : '',
+          `${train[0]} (${train[1]})`
         ];
-        const details = document.createElement('dl');
-        values.forEach(([label, value]) => {
-          const term = document.createElement('dt');
-          term.textContent = label;
-          const description = document.createElement('dd');
-          description.textContent = value;
-          details.append(term, description);
+        values.forEach((value) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
         });
-        card.appendChild(details);
-        results.appendChild(card);
+        resultsBody.appendChild(row);
       });
     }
 
