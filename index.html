@@ -53,14 +53,16 @@
   </main>
 
   <script>
-    const csvUrl = './sobu_yokosuka_timetable_refined.csv';
+    const csvUrls = [
+      './yokosuka_line_for_Tokyo.csv',
+      './yokosuka_line_for_Chiba.csv'
+    ];
     const departureSelect = document.querySelector('#departure');
     const arrivalSelect = document.querySelector('#arrival');
     const status = document.querySelector('#status');
     const updated = document.querySelector('#updated');
     const results = document.querySelector('#results');
-    let trains = [];
-    let stationColumns = [];
+    let datasets = [];
 
     function parseCsv(text) {
       return text.trim().split(/\r?\n/).map((line) => line.split(','));
@@ -68,6 +70,10 @@
 
     function stationName(header) {
       return header.replace(/_(?:発|着)$/, '');
+    }
+
+    function normalizeHeader(header) {
+      return header.replace(/\s/g, '');
     }
 
     function timeToMinutes(value) {
@@ -97,15 +103,26 @@
       select.disabled = false;
     }
 
+    function findStationColumn(columns, name, type) {
+      return columns.find((item) =>
+        item.name === name && item.header.endsWith(`_${type}`)
+      ) || columns.find((item) => item.name === name);
+    }
+
+    function findRoute(departure, arrival) {
+      return datasets.find((dataset) => {
+        const departureColumn = findStationColumn(dataset.stationColumns, departure, '発');
+        const arrivalColumn = findStationColumn(dataset.stationColumns, arrival, '着');
+        return departureColumn && arrivalColumn && departureColumn.index < arrivalColumn.index;
+      });
+    }
+
     function renderResults() {
       const departure = departureSelect.value;
       const arrival = arrivalSelect.value;
-      const departureColumn = stationColumns.find((item) =>
-        item.name === departure && item.header.endsWith('_発')
-      );
-      const arrivalColumn = stationColumns.find((item) =>
-        item.name === arrival && item.header.endsWith('_着')
-      ) || stationColumns.find((item) => item.name === arrival);
+      const dataset = findRoute(departure, arrival);
+      const departureColumn = dataset && findStationColumn(dataset.stationColumns, departure, '発');
+      const arrivalColumn = dataset && findStationColumn(dataset.stationColumns, arrival, '着');
 
       const resultsBody = results.querySelector('tbody');
       resultsBody.replaceChildren();
@@ -116,7 +133,7 @@
       }
 
       const currentMinutes = getCurrentMinutes();
-      const matchingTrains = trains
+      const matchingTrains = dataset.trains
         .map((train) => {
           const departureMinutes = timeToMinutes(train[departureColumn.index]);
           const arrivalMinutes = timeToMinutes(train[arrivalColumn.index]);
@@ -157,19 +174,31 @@
 
     async function loadTimetable() {
       try {
-        const response = await fetch(csvUrl);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const rows = parseCsv(await response.text());
-        const headers = rows[0];
-        stationColumns = headers
+        const responses = await Promise.all(csvUrls.map(async (csvUrl) => {
+          const response = await fetch(csvUrl);
+          if (!response.ok) throw new Error(`${csvUrl}: HTTP ${response.status}`);
+          return { csvUrl, text: await response.text() };
+        }));
+        datasets = responses.map(({ csvUrl, text }) => {
+          const rows = parseCsv(text);
+          const headers = rows[0].map(normalizeHeader);
+          const stationColumns = headers
           .map((header, index) => ({ header, index, name: stationName(header) }))
           .filter((item) => /_(?:発|着)$/.test(item.header));
-        trains = rows.slice(1).filter((row) => row.length >= headers.length);
+          return {
+            csvUrl,
+            stationColumns,
+            trains: rows.slice(1).filter((row) => row.length >= headers.length)
+          };
+        });
 
         const departureNames = [...new Set(
-          stationColumns.filter((item) => item.header.endsWith('_発')).map((item) => item.name)
+          datasets.flatMap((dataset) => dataset.stationColumns)
+            .filter((item) => item.header.endsWith('_発')).map((item) => item.name)
         )];
-        const arrivalNames = [...new Set(stationColumns.map((item) => item.name))];
+        const arrivalNames = [...new Set(
+          datasets.flatMap((dataset) => dataset.stationColumns).map((item) => item.name)
+        )];
         fillSelect(departureSelect, departureNames);
         fillSelect(arrivalSelect, arrivalNames);
         arrivalSelect.selectedIndex = Math.min(1, arrivalSelect.options.length - 1);
