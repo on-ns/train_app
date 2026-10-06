@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>総武線・横須賀線 時刻表</title>
+</head>
+<body>
+  <main>
+    <h1>総武線・横須賀線 時刻表</h1>
+
+    <p>
+      <label>
+        出発駅
+        <select id="departure" disabled>
+          <option>読み込み中...</option>
+        </select>
+      </label>
+      <label>
+        到着駅
+        <select id="arrival" disabled>
+          <option>読み込み中...</option>
+        </select>
+      </label>
+    </p>
+
+    <p id="status">時刻表を読み込んでいます...</p>
+    <p id="updated"></p>
+    <table>
+      <thead>
+        <tr>
+          <th>出発時刻</th>
+          <th>所要時間</th>
+          <th>始発</th>
+          <th>列車</th>
+        </tr>
+      </thead>
+      <tbody id="results"></tbody>
+    </table>
+  </main>
+
+  <script>
+    const csvUrl = './sobu_yokosuka_timetable_refined.csv';
+    const departureSelect = document.querySelector('#departure');
+    const arrivalSelect = document.querySelector('#arrival');
+    const status = document.querySelector('#status');
+    const updated = document.querySelector('#updated');
+    const results = document.querySelector('#results');
+    let trains = [];
+    let stationColumns = [];
+
+    function parseCsv(text) {
+      return text.trim().split(/\r?\n/).map((line) => line.split(','));
+    }
+
+    function stationName(header) {
+      return header.replace(/_(?:発|着)$/, '');
+    }
+
+    function timeToMinutes(value) {
+      if (!/^\d{4}$/.test(value)) return null;
+      const hours = Number(value.slice(0, 2));
+      const minutes = Number(value.slice(2));
+      if (hours > 23 || minutes > 59) return null;
+      return hours * 60 + minutes;
+    }
+
+    function formatTime(value) {
+      return `${value.slice(0, 2)}:${value.slice(2)}`;
+    }
+
+    function getStationTime(train, name, type) {
+      const column = stationColumns.find((item) =>
+        item.name === name && item.header.endsWith(`_${type}`)
+      );
+      if (!column) return null;
+      return timeToMinutes(train[column.index]);
+    }
+
+    function getCurrentMinutes() {
+      const now = new Date();
+      return now.getHours() * 60 + now.getMinutes();
+    }
+
+    function fillSelect(select, names) {
+      select.replaceChildren(...names.map((name) => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        return option;
+      }));
+      select.disabled = false;
+    }
+
+    function renderResults() {
+      const departure = departureSelect.value;
+      const arrival = arrivalSelect.value;
+      const departureColumn = stationColumns.find((item) =>
+        item.name === departure && item.header.endsWith('_発')
+      );
+      const arrivalColumn = stationColumns.find((item) =>
+        item.name === arrival && item.header.endsWith('_着')
+      ) || stationColumns.find((item) => item.name === arrival);
+
+      results.replaceChildren();
+      if (!departureColumn || !arrivalColumn || departureColumn.index >= arrivalColumn.index) {
+        status.textContent = 'この区間の列車情報はありません。駅を選び直してください。';
+        updated.textContent = '';
+        return;
+      }
+
+      const currentMinutes = getCurrentMinutes();
+      const matchingTrains = trains
+        .map((train) => {
+          const departureMinutes = timeToMinutes(train[departureColumn.index]);
+          const arrivalMinutes = timeToMinutes(train[arrivalColumn.index]);
+          if (departureMinutes === null || arrivalMinutes === null || arrivalMinutes < departureMinutes) {
+            return null;
+          }
+          return { train, departureMinutes, arrivalMinutes };
+        })
+        .filter((item) => item && item.departureMinutes >= currentMinutes)
+        .slice(0, 5);
+
+      if (matchingTrains.length === 0) {
+        status.textContent = '現在時刻以降の列車はありません。';
+      } else {
+        status.textContent = `${departure}駅から${arrival}駅まで、現在時刻以降の列車（最大5本）`;
+      }
+      updated.textContent = `検索時刻: ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+
+      matchingTrains.forEach(({ train, departureMinutes, arrivalMinutes }) => {
+        const row = document.createElement('tr');
+        const start = train[5] || '';
+        const startStation = start.replace(/\s+\d{4}$/, '');
+        const values = [
+          formatTime(String(train[departureColumn.index]).padStart(4, '0')),
+          `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`,
+          startStation ? `はい（${startStation}）` : 'いいえ',
+          `${train[0]} (${train[1]})`
+        ];
+        values.forEach((value) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        results.appendChild(row);
+      });
+    }
+
+    async function loadTimetable() {
+      try {
+        const response = await fetch(csvUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const rows = parseCsv(await response.text());
+        const headers = rows[0];
+        stationColumns = headers
+          .map((header, index) => ({ header, index, name: stationName(header) }))
+          .filter((item) => /_(?:発|着)$/.test(item.header));
+        trains = rows.slice(1).filter((row) => row.length >= headers.length);
+
+        const departureNames = [...new Set(
+          stationColumns.filter((item) => item.header.endsWith('_発')).map((item) => item.name)
+        )];
+        const arrivalNames = [...new Set(stationColumns.map((item) => item.name))];
+        fillSelect(departureSelect, departureNames);
+        fillSelect(arrivalSelect, arrivalNames);
+        arrivalSelect.selectedIndex = Math.min(1, arrivalSelect.options.length - 1);
+        departureSelect.addEventListener('change', renderResults);
+        arrivalSelect.addEventListener('change', renderResults);
+        renderResults();
+        setInterval(renderResults, 60000);
+      } catch (error) {
+        status.textContent = `時刻表を読み込めませんでした: ${error.message}`;
+      }
+    }
+
+    loadTimetable();
+  </script>
+</body>
+</html>
