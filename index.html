@@ -110,6 +110,13 @@
       return [...select.options].some((option) => option.value === value);
     }
 
+    function updateUrl() {
+      const url = new URL(window.location.href);
+      url.searchParams.set('departure', departureSelect.value);
+      url.searchParams.set('arrival', arrivalSelect.value);
+      window.history.replaceState(null, '', `${url.pathname}?${url.searchParams}${url.hash}`);
+    }
+
     function findStationColumn(columns, name, type) {
       return columns.find((item) =>
         item.name === name && item.header.endsWith(`_${type}`)
@@ -231,18 +238,31 @@
         fillSelect(departureSelect, departureNames);
         fillSelect(arrivalSelect, arrivalNames);
         swapButton.disabled = false;
-        arrivalSelect.selectedIndex = Math.min(1, arrivalSelect.options.length - 1);
-        departureSelect.addEventListener('change', renderResults);
-        arrivalSelect.addEventListener('change', renderResults);
+        const url = new URL(window.location.href);
+        if (hasOption(departureSelect, url.searchParams.get('departure'))) {
+          departureSelect.value = url.searchParams.get('departure');
+        }
+        if (hasOption(arrivalSelect, url.searchParams.get('arrival'))) {
+          arrivalSelect.value = url.searchParams.get('arrival');
+        } else {
+          arrivalSelect.selectedIndex = Math.min(1, arrivalSelect.options.length - 1);
+        }
+        const handleStationChange = () => {
+          updateUrl();
+          renderResults();
+        };
+        departureSelect.addEventListener('change', handleStationChange);
+        arrivalSelect.addEventListener('change', handleStationChange);
         swapButton.addEventListener('click', () => {
           const departure = departureSelect.value;
           const arrival = arrivalSelect.value;
           if (hasOption(departureSelect, arrival) && hasOption(arrivalSelect, departure)) {
             departureSelect.value = arrival;
             arrivalSelect.value = departure;
-            renderResults();
+            handleStationChange();
           }
         });
+        updateUrl();
         renderResults();
         setInterval(renderResults, 60000);
       } catch (error) {
@@ -251,7 +271,7 @@
     }
 
     reloadButton.addEventListener('click', () => {
-      window.location.href = './index.html';
+      window.location.reload();
     });
 
     loadTimetable();
