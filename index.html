@@ -116,32 +116,44 @@
       ) || columns.find((item) => item.name === name);
     }
 
-    function isTrainStartingAtStation(dataset, train, departureColumn) {
-      const departurePosition = dataset.stationColumns.findIndex((column) =>
-        column.index === departureColumn.index
+    function isTrainStartingAtStation(route, train) {
+      const departurePosition = route.dataset.stationColumns.findIndex((column) =>
+        column.index === route.departureColumn.index
       );
-      const previousStation = [...dataset.stationColumns]
-        .slice(0, departurePosition)
-        .reverse()
-        .find((column) => column.name !== departureColumn.name);
+      const previousStations = route.direction > 0
+        ? route.dataset.stationColumns.slice(0, departurePosition).reverse()
+        : route.dataset.stationColumns.slice(departurePosition + 1);
+      const previousStation = previousStations
+        .find((column) => column.name !== route.departure);
 
       return !previousStation || timeToMinutes(train[previousStation.index]) === null;
     }
 
     function findRoute(departure, arrival) {
-      return datasets.find((dataset) => {
+      return datasets.map((dataset) => {
         const departureColumn = findStationColumn(dataset.stationColumns, departure, '発');
         const arrivalColumn = findStationColumn(dataset.stationColumns, arrival, '着');
-        return departureColumn && arrivalColumn && departureColumn.index < arrivalColumn.index;
-      });
+        if (!departureColumn || !arrivalColumn || departureColumn.index >= arrivalColumn.index) {
+          return null;
+        }
+        return {
+          dataset,
+          departure,
+          arrival,
+          departureColumn,
+          arrivalColumn,
+          direction: Math.sign(arrivalColumn.index - departureColumn.index)
+        };
+      }).find((route) => route);
     }
 
     function renderResults() {
       const departure = departureSelect.value;
       const arrival = arrivalSelect.value;
-      const dataset = findRoute(departure, arrival);
-      const departureColumn = dataset && findStationColumn(dataset.stationColumns, departure, '発');
-      const arrivalColumn = dataset && findStationColumn(dataset.stationColumns, arrival, '着');
+      const route = findRoute(departure, arrival);
+      const dataset = route && route.dataset;
+      const departureColumn = route && route.departureColumn;
+      const arrivalColumn = route && route.arrivalColumn;
 
       const resultsBody = results.querySelector('tbody');
       resultsBody.replaceChildren();
@@ -177,7 +189,7 @@
           formatTime(String(train[departureColumn.index]).padStart(4, '0')),
           `${departureMinutes - currentMinutes}分`,
           `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`,
-          isTrainStartingAtStation(dataset, train, departureColumn) ? '始発' : '',
+          isTrainStartingAtStation(route, train) ? '始発' : '',
           `${train[0]} (${train[1]})`
         ];
         values.forEach((value) => {
