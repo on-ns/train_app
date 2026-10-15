@@ -15,6 +15,14 @@
       border: 1px solid #999;
       padding: 0.5rem;
     }
+
+    .long-duration {
+      color: #5c0000;
+    }
+
+    .starting-station {
+      color: #1f5000;
+    }
   </style>
 </head>
 <body>
@@ -189,19 +197,30 @@
         status.textContent = '';
       }
       updated.textContent = `検索時刻: ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+      const maxDuration = Math.max(...matchingTrains.map(({ departureMinutes, arrivalMinutes }) =>
+        arrivalMinutes - departureMinutes
+      ));
 
       matchingTrains.forEach(({ train, departureMinutes, arrivalMinutes }) => {
         const row = document.createElement('tr');
+        const duration = arrivalMinutes - departureMinutes;
+        const isStartingStation = isTrainStartingAtStation(route, train);
         const values = [
           formatTime(String(train[departureColumn.index]).padStart(4, '0')),
           `${departureMinutes - currentMinutes}分`,
-          `${Math.floor((arrivalMinutes - departureMinutes) / 60)}時間${(arrivalMinutes - departureMinutes) % 60}分`,
-          isTrainStartingAtStation(route, train) ? '始発' : '',
+          `${Math.floor(duration / 60)}時間${duration % 60}分`,
+          isStartingStation ? '始発' : '',
           `${train[0]} (${train[1]})`
         ];
-        values.forEach((value) => {
+        values.forEach((value, index) => {
           const cell = document.createElement('td');
           cell.textContent = value;
+          if (index === 2 && duration === maxDuration) {
+            cell.classList.add('long-duration');
+          }
+          if (index === 3 && isStartingStation) {
+            cell.classList.add('starting-station');
+          }
           row.appendChild(cell);
         });
         resultsBody.appendChild(row);
