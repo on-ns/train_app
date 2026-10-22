@@ -20,6 +20,15 @@
       color: #9a0000;
     }
 
+    .past-train {
+      color: #888;
+    }
+
+    .past-train .long-duration,
+    .past-train .starting-station {
+      color: #888;
+    }
+
     .starting-station {
       color: #348800;
     }
@@ -243,7 +252,7 @@
       }
 
       const currentMinutes = getCurrentMinutes();
-      const matchingTrains = dataset.trains
+      const validTrains = dataset.trains
         .map((train) => {
           const departureMinutes = timeToMinutes(train[departureColumn.index]);
           const arrivalMinutes = timeToMinutes(train[arrivalColumn.index]);
@@ -252,10 +261,19 @@
           }
           return { train, departureMinutes, arrivalMinutes };
         })
-        .filter((item) => item && item.departureMinutes >= currentMinutes)
-        .slice(0, 10);
+        .filter((item) => item)
+        .sort((a, b) => a.departureMinutes - b.departureMinutes);
+      const futureTrains = validTrains
+        .filter((item) => item.departureMinutes >= currentMinutes)
+        .slice(0, 9);
+      const previousTrains = validTrains
+        .filter((item) => item.departureMinutes < currentMinutes)
+      const previousTrain = previousTrains[previousTrains.length - 1];
+      const matchingTrains = previousTrain
+        ? [previousTrain, ...futureTrains]
+        : futureTrains;
 
-      if (matchingTrains.length === 0) {
+      if (futureTrains.length === 0) {
         status.textContent = '現在時刻以降の列車はありません。';
       } else {
         status.textContent = '';
@@ -264,11 +282,18 @@
       const maxDuration = Math.max(...matchingTrains.map(({ departureMinutes, arrivalMinutes }) =>
         arrivalMinutes - departureMinutes
       ));
+      const hasDifferentDuration = matchingTrains.some(({ departureMinutes, arrivalMinutes }) =>
+        arrivalMinutes - departureMinutes !== maxDuration
+      );
 
       matchingTrains.forEach(({ train, departureMinutes, arrivalMinutes }) => {
         const row = document.createElement('tr');
         const duration = arrivalMinutes - departureMinutes;
         const isStartingStation = isTrainStartingAtStation(route, train);
+        const isPastTrain = departureMinutes < currentMinutes;
+        if (isPastTrain) {
+          row.classList.add('past-train');
+        }
         const values = [
           formatTime(String(train[departureColumn.index]).padStart(4, '0')),
           `${departureMinutes - currentMinutes}分`,
@@ -279,7 +304,7 @@
         values.forEach((value, index) => {
           const cell = document.createElement('td');
           cell.textContent = value;
-          if (index === 2 && duration === maxDuration) {
+          if (index === 2 && hasDifferentDuration && duration === maxDuration) {
             cell.classList.add('long-duration');
           }
           if (index === 3 && isStartingStation) {
