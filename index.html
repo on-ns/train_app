@@ -79,9 +79,13 @@
       return element.textContent.replace(/\s+/g, ' ').trim();
     }
 
+    function directCells(row, tagName) {
+      return [...row.children].filter((element) => element.tagName.toLowerCase() === tagName);
+    }
+
     function parseTimetableHtml(text, htmlUrl) {
-      const document = new DOMParser().parseFromString(text, 'text/html');
-      const tables = [...document.querySelectorAll('.paper_timetableBox .paper_table')];
+      const parsedDocument = new DOMParser().parseFromString(text, 'text/html');
+      const tables = [...parsedDocument.querySelectorAll('table.paper_table')];
       if (tables.length === 0) {
         throw new Error(`${htmlUrl}: 時刻表テーブルが見つかりません`);
       }
@@ -102,16 +106,16 @@
         }
 
         const stationRows = rows.filter((row) => {
-          const headers = row.querySelectorAll(':scope > th');
+          const headers = directCells(row, 'th');
           return headers.length >= 2 && /^(発|着)$/.test(textContent(headers[1]));
         });
         const stationColumns = [];
         const timesByTrain = trainNumbers.map(() => []);
         stationRows.forEach((row) => {
-          const headers = row.querySelectorAll(':scope > th');
+          const headers = directCells(row, 'th');
           const name = textContent(headers[0]);
           const type = textContent(headers[1]);
-          const cells = [...row.querySelectorAll(':scope > td')];
+          const cells = directCells(row, 'td');
           if (!name || cells.length !== trainNumbers.length) return;
           const index = stationColumns.length;
           stationColumns.push({ header: `${name}_${type}`, index: index + 2, name });
@@ -319,7 +323,7 @@
         renderResults();
         setInterval(renderResults, 60000);
       } catch (error) {
-        status.textContent = `時刻表を読み込めませんでした: ${error.message}`;
+        status.textContent = `時刻表を読み込めませんでした: ${error instanceof Error ? error.message : String(error)}`;
       }
     }
 
