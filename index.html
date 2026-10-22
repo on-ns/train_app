@@ -62,9 +62,9 @@
   </main>
 
   <script>
-    const csvUrls = [
-      './yokosuka_line_for_Tokyo.csv',
-      './yokosuka_line_for_Chiba.csv'
+    const htmlUrls = [
+      './to_tokyo_timetable.html',
+      './to_chiba_timetable.html'
     ];
     const departureSelect = document.querySelector('#departure');
     const arrivalSelect = document.querySelector('#arrival');
@@ -75,16 +75,61 @@
     const results = document.querySelector('#results');
     let datasets = [];
 
-    function parseCsv(text) {
-      return text.trim().split(/\r?\n/).map((line) => line.split(','));
+    function textContent(element) {
+      return element.textContent.replace(/\s+/g, ' ').trim();
     }
 
-    function stationName(header) {
-      return header.replace(/_(?:発|着)$/, '');
-    }
+    function parseTimetableHtml(text, htmlUrl) {
+      const document = new DOMParser().parseFromString(text, 'text/html');
+      const tables = [...document.querySelectorAll('.paper_timetableBox .paper_table')];
+      if (tables.length === 0) {
+        throw new Error(`${htmlUrl}: 時刻表テーブルが見つかりません`);
+      }
 
-    function normalizeHeader(header) {
-      return header.replace(/\s/g, '');
+      return tables.map((table) => {
+        const rows = [...table.querySelectorAll('tr')];
+        const rowByClass = (className) => rows.find((row) => row.classList.contains(className));
+        const trainNumberRow = rowByClass('tableTr_trainNumber');
+        const trainNameRow = rowByClass('tableTr_trainName');
+        if (!trainNumberRow || !trainNameRow) {
+          throw new Error(`${htmlUrl}: 列車情報が見つかりません`);
+        }
+
+        const trainNumbers = [...trainNumberRow.querySelectorAll('td')].map(textContent);
+        const trainNames = [...trainNameRow.querySelectorAll('td')].map(textContent);
+        if (trainNumbers.length === 0 || trainNumbers.length !== trainNames.length) {
+          throw new Error(`${htmlUrl}: 列車情報の列数が一致しません`);
+        }
+
+        const stationRows = rows.filter((row) => {
+          const headers = row.querySelectorAll(':scope > th');
+          return headers.length >= 2 && /^(発|着)$/.test(textContent(headers[1]));
+        });
+        const stationColumns = [];
+        const timesByTrain = trainNumbers.map(() => []);
+        stationRows.forEach((row) => {
+          const headers = row.querySelectorAll(':scope > th');
+          const name = textContent(headers[0]);
+          const type = textContent(headers[1]);
+          const cells = [...row.querySelectorAll(':scope > td')];
+          if (!name || cells.length !== trainNumbers.length) return;
+          const index = stationColumns.length;
+          stationColumns.push({ header: `${name}_${type}`, index: index + 2, name });
+          cells.forEach((cell, trainIndex) => {
+            timesByTrain[trainIndex][index] = textContent(cell);
+          });
+        });
+
+        return {
+          htmlUrl,
+          stationColumns,
+          trains: trainNumbers.map((number, index) => [
+            number,
+            trainNames[index],
+            ...timesByTrain[index]
+          ])
+        };
+      });
     }
 
     function timeToMinutes(value) {
@@ -229,23 +274,12 @@
 
     async function loadTimetable() {
       try {
-        const responses = await Promise.all(csvUrls.map(async (csvUrl) => {
-          const response = await fetch(csvUrl);
-          if (!response.ok) throw new Error(`${csvUrl}: HTTP ${response.status}`);
-          return { csvUrl, text: await response.text() };
+        const responses = await Promise.all(htmlUrls.map(async (htmlUrl) => {
+          const response = await fetch(htmlUrl);
+          if (!response.ok) throw new Error(`${htmlUrl}: HTTP ${response.status}`);
+          return { htmlUrl, text: await response.text() };
         }));
-        datasets = responses.map(({ csvUrl, text }) => {
-          const rows = parseCsv(text);
-          const headers = rows[0].map(normalizeHeader);
-          const stationColumns = headers
-          .map((header, index) => ({ header, index, name: stationName(header) }))
-          .filter((item) => /_(?:発|着)$/.test(item.header));
-          return {
-            csvUrl,
-            stationColumns,
-            trains: rows.slice(1).filter((row) => row.length >= headers.length)
-          };
-        });
+        datasets = responses.flatMap(({ htmlUrl, text }) => parseTimetableHtml(text, htmlUrl));
 
         const departureNames = [...new Set(
           datasets.flatMap((dataset) => dataset.stationColumns)
