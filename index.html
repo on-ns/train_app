@@ -213,6 +213,35 @@
       ) || columns.find((item) => item.name === name);
     }
 
+    function isTime(value) {
+      return timeToMinutes(value) !== null;
+    }
+
+    function findContinuousTrains(route) {
+      const tokyoArrival = findStationColumn(route.dataset.stationColumns, '東京', '着');
+      if (!tokyoArrival) return [];
+      const tokyoArrivalIndex = tokyoArrival.index;
+      const trains = route.dataset.trains;
+      const continuousTrains = [];
+
+      for (let index = 0; index < trains.length - 1; index += 1) {
+        const firstTrain = trains[index];
+        const secondTrain = trains[index + 1];
+        if (!/^(┐|￢)$/.test(secondTrain[tokyoArrivalIndex]) ||
+            !isTime(firstTrain[route.departureColumn.index]) ||
+            !isTime(secondTrain[route.arrivalColumn.index])) {
+          continue;
+        }
+        const train = firstTrain.map((value, valueIndex) =>
+          isTime(value) ? value : secondTrain[valueIndex]
+        );
+        train[0] = `${firstTrain[0]}→${secondTrain[0]}`;
+        train[1] = secondTrain[1];
+        continuousTrains.push(train);
+      }
+      return continuousTrains;
+    }
+
     function isTrainStartingAtStation(route, train) {
       if (route.departure === '東京' && train.continuesAtTokyo) {
         return false;
@@ -269,8 +298,10 @@
       }
 
       const currentMinutes = getCurrentMinutes();
-      const validTrains = dataset.trains
-        .filter((train) => !route.crossesTokyo || train.continuesAtTokyo)
+      const routeTrains = route.crossesTokyo
+        ? findContinuousTrains(route)
+        : dataset.trains;
+      const validTrains = routeTrains
         .map((train) => {
           const departureMinutes = timeToMinutes(train[departureColumn.index]);
           const arrivalMinutes = timeToMinutes(train[arrivalColumn.index]);
