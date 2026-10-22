@@ -135,11 +135,20 @@
 
         return {
           stationColumns,
-          trains: trainNumbers.map((number, index) => [
-            number,
-            trainNames[index],
-            ...timesByTrain[index]
-          ])
+          trains: trainNumbers.map((number, index) => {
+            const train = [number, trainNames[index], ...timesByTrain[index]];
+            const tokyoArrival = stationColumns.findIndex((column) =>
+              column.header === '東京_着'
+            );
+            const tokyoDeparture = stationColumns.findIndex((column) =>
+              column.header === '東京_発'
+            );
+            train.continuesAtTokyo = tokyoArrival >= 0 &&
+              tokyoDeparture >= 0 &&
+              /^(┐|￢)$/.test(train[tokyoArrival + 2]) &&
+              timeToMinutes(train[tokyoDeparture + 2]) !== null;
+            return train;
+          })
         };
       });
 
@@ -205,6 +214,9 @@
     }
 
     function isTrainStartingAtStation(route, train) {
+      if (route.departure === '東京' && train.continuesAtTokyo) {
+        return false;
+      }
       const departurePosition = route.dataset.stationColumns.findIndex((column) =>
         column.index === route.departureColumn.index
       );
@@ -230,7 +242,12 @@
           arrival,
           departureColumn,
           arrivalColumn,
-          direction: Math.sign(arrivalColumn.index - departureColumn.index)
+          direction: Math.sign(arrivalColumn.index - departureColumn.index),
+          crossesTokyo: dataset.stationColumns.some((column) =>
+            column.header === '東京_着' &&
+            column.index > departureColumn.index &&
+            column.index < arrivalColumn.index
+          )
         };
       }).find((route) => route);
     }
@@ -253,6 +270,7 @@
 
       const currentMinutes = getCurrentMinutes();
       const validTrains = dataset.trains
+        .filter((train) => !route.crossesTokyo || train.continuesAtTokyo)
         .map((train) => {
           const departureMinutes = timeToMinutes(train[departureColumn.index]);
           const arrivalMinutes = timeToMinutes(train[arrivalColumn.index]);
